@@ -4,7 +4,7 @@ use std::fmt::Formatter;
 #[derive(Debug)]
 pub struct TokenData<'a> {
     pub lexeme: &'a str,
-    pub line: i32,
+    pub line: u32,
 }
 
 impl fmt::Display for TokenData<'_> {
