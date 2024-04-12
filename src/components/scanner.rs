@@ -1,16 +1,14 @@
-use crate::components::token_data::TokenData;
+use super::token_components::{Token, TokenType};
 
-use super::token_type::TokenType;
-
-pub struct Scanner<'a> {
+pub struct Scanner {
     source: Vec<char>,
-    tokens: Vec<TokenType<'a>>,
+    tokens: Vec<Token>,
     start: u32,
     current: u32,
     line: u32,
 }
 
-impl Scanner<'_> {
+impl Scanner {
     pub fn new(source: &str) -> Self {
         Self {
             source: source.chars().collect(),
@@ -21,17 +19,19 @@ impl Scanner<'_> {
         }
     }
 
-    pub fn scan_tokens(&mut self) -> &Vec<TokenType> {
+    pub fn scan_tokens(&mut self) -> &Vec<Token> {
         while !self.is_at_end() {
             self.start = self.current;
 
             self.scan_token();
         }
 
-        self.tokens.push(TokenType::EOF(TokenData {
-            lexeme: "\0",
+        self.tokens.push(Token {
+            token: TokenType::EOF,
             line: self.line,
-        }));
+            lexeme: "\0".into(),
+            literal: None,
+        });
 
         &self.tokens
     }
