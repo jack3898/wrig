@@ -126,6 +126,8 @@ impl Scanner {
                 }
             }
             '/' => self.add_token(Slash, None),
+            ' ' | '\r' | '\t' => (),
+            '\n' => self.line += 1,
             c => Err(ScannerError::UnexpectedToken {
                 lexeme: c.to_string(),
                 line: self.line,
@@ -248,7 +250,7 @@ mod tests {
     fn should_add_two_char_token() {
         let mut scanner = super::Scanner::new("<=");
 
-        let token = scanner.scan_tokens().expect("Failed to scan tokens");
+        let token = scanner.scan_tokens().unwrap();
 
         assert_eq!(
             token[0],
@@ -265,10 +267,10 @@ mod tests {
     fn should_add_eof_after_scan() {
         let mut scanner = super::Scanner::new("");
 
-        let token = scanner.scan_tokens().expect("Failed to scan tokens");
+        let tokens = scanner.scan_tokens().unwrap();
 
         assert_eq!(
-            token[0],
+            tokens[0],
             Token {
                 token: EOF,
                 line: 1,
@@ -282,7 +284,7 @@ mod tests {
     fn should_strip_comments() {
         let mut scanner = super::Scanner::new("// this is a comment");
 
-        let tokens = scanner.scan_tokens().expect("Failed to scan tokens");
+        let tokens = scanner.scan_tokens().unwrap();
 
         assert_eq!(
             tokens[0],
@@ -298,7 +300,8 @@ mod tests {
 
     #[test]
     fn should_match_tokens_prior_to_comment() {
-        let mut scanner = super::Scanner::new("<=// Wow! A less-than-or-equal-to binary operator!");
+        let mut scanner =
+            super::Scanner::new("<= // Wow! A less-than-or-equal-to binary operator!");
 
         let tokens = scanner.scan_tokens().unwrap();
 
@@ -312,5 +315,23 @@ mod tests {
             }
         );
         assert!(tokens.len() == 2); // Includes EOF
+    }
+
+    #[test]
+    fn should_increment_line() {
+        let mut scanner = super::Scanner::new("(\n()\n+//\n");
+
+        scanner.scan_tokens().unwrap();
+
+        assert_eq!(scanner.line, 4);
+    }
+
+    #[test]
+    fn should_ignore_whitespace() {
+        let mut scanner = super::Scanner::new("\t   \t  \t");
+
+        scanner.scan_tokens().unwrap();
+
+        assert_eq!(scanner.tokens.len(), 1); // Includes EOF
     }
 }
