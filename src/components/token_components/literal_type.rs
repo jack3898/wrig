@@ -1,3 +1,4 @@
+#[derive(Debug, PartialEq)]
 pub enum LiteralType {
     String(String),
     Number(f64),

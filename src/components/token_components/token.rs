@@ -3,9 +3,10 @@ use std::fmt::Display;
 use super::LiteralType;
 use super::TokenType;
 
+#[derive(Debug, PartialEq)]
 pub struct Token {
     pub token: TokenType,
-    pub line: u32,
+    pub line: usize,
     pub lexeme: String,
     pub literal: Option<LiteralType>,
 }

@@ -6,12 +6,6 @@ pub struct Application {
     had_error: bool,
 }
 
-impl Default for Application {
-    fn default() -> Self {
-        Self { had_error: false }
-    }
-}
-
 impl Application {
     fn report(&mut self, line: i32, where_msg: &str, message: &str) {
         println!("[line {line}] Error{where_msg}: {message}");
@@ -21,7 +15,11 @@ impl Application {
 
     pub fn run(&self, source: &str) {
         // First we scan the source for its distinct tokens
-        let scanner = Scanner::new(source);
+        let mut scanner = Scanner::new(source);
+
+        let tokens = scanner.scan_tokens();
+
+        println!("{:?}", tokens);
 
         self.exit();
     }
@@ -32,5 +30,11 @@ impl Application {
         }
 
         process::exit(0);
+    }
+}
+
+impl Default for Application {
+    fn default() -> Self {
+        Self { had_error: false }
     }
 }
