@@ -1,6 +1,6 @@
 #[derive(Debug, PartialEq)]
 pub enum LiteralType {
-    String(String),
+    Str(String),
     Number(f64),
     Bool(bool),
     Nil,
@@ -9,7 +9,7 @@ pub enum LiteralType {
 impl std::fmt::Display for LiteralType {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Self::String(s) => write!(f, "{s}"),
+            Self::Str(s) => write!(f, "{s}"),
             Self::Number(n) => write!(f, "{n}"),
             Self::Bool(b) => write!(f, "{b}"),
             Self::Nil => write!(f, "nil"),

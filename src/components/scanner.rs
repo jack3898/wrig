@@ -71,7 +71,7 @@ impl Scanner {
             return None;
         };
 
-        self.source.get(self.current as usize).copied()
+        self.source.get(self.current).copied()
     }
 
     fn advance(&mut self) -> Option<char> {
@@ -121,11 +121,12 @@ impl Scanner {
             '=' => self.add_token(Equal, None),
             '/' if self.conditional_advance('/') => {
                 // This is a comment, like this one! We'll just strip it.
-                while !self.is_at_end() && !self.is_at_end_of_line() {
+                while !self.is_at_end() && !self.current_char_eq('\n') {
                     self.advance();
                 }
             }
             '/' => self.add_token(Slash, None),
+            '"' => self.add_string_token()?,
             ' ' | '\r' | '\t' => (),
             '\n' => self.line += 1,
             c => Err(ScannerError::UnexpectedToken {
@@ -133,6 +134,29 @@ impl Scanner {
                 line: self.line,
             })?,
         };
+
+        Ok(())
+    }
+
+    /// Scans the entirety of a string literal into a token and adds it to the scanner's tokens vector.
+    fn add_string_token(&mut self) -> Result<(), ScannerError> {
+        while !self.current_char_eq('"') && !self.is_at_end() {
+            if self.current_char_eq('\n') {
+                self.line += 1;
+            }
+
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            return Err(ScannerError::UnterminatedString { line: self.line });
+        }
+
+        self.advance();
+
+        let value = self.get_source_slice(self.start + 1, self.current - 1);
+
+        self.add_token(Str, Some(LiteralType::Str(value)));
 
         Ok(())
     }
@@ -154,11 +178,11 @@ impl Scanner {
         self.current >= self.source.len()
     }
 
-    fn is_at_end_of_line(&self) -> bool {
+    fn current_char_eq(&self, test: char) -> bool {
         let current = self.peek();
 
         match current {
-            Some(char) => char == '\n',
+            Some(char) => char == test,
             None => false,
         }
     }
@@ -166,11 +190,13 @@ impl Scanner {
 
 #[cfg(test)]
 mod tests {
-    use super::{ScannerError, Token, TokenType::*};
+    use crate::components::token_components::LiteralType;
+
+    use super::{Scanner, ScannerError, Token, TokenType::*};
 
     #[test]
     fn should_init_scanner() {
-        let scanner = super::Scanner::new("Hello, world!");
+        let scanner = Scanner::new("Hello, world!");
 
         assert_eq!(
             scanner.source,
@@ -180,14 +206,14 @@ mod tests {
 
     #[test]
     fn is_at_end_false_on_init() {
-        let scanner = super::Scanner::new("Hello, world!");
+        let scanner = Scanner::new("Hello, world!");
 
         assert!(!scanner.is_at_end());
     }
 
     #[test]
     fn is_at_end_true_when_at_end() {
-        let mut scanner = super::Scanner::new("Hello, world!");
+        let mut scanner = Scanner::new("Hello, world!");
 
         scanner.current = 13;
 
@@ -196,7 +222,7 @@ mod tests {
 
     #[test]
     fn is_at_end_false_when_not_at_end() {
-        let mut scanner = super::Scanner::new("Hello, world!");
+        let mut scanner = Scanner::new("Hello, world!");
 
         scanner.current = 12;
 
@@ -205,7 +231,7 @@ mod tests {
 
     #[test]
     fn should_return_error_on_unknown_token() {
-        let mut scanner = super::Scanner::new("Hello, world!");
+        let mut scanner = Scanner::new("Hello, world!");
 
         let result = scanner.scan_token();
 
@@ -217,7 +243,7 @@ mod tests {
 
     #[test]
     fn should_return_unexpected_eof() {
-        let mut scanner = super::Scanner::new("");
+        let mut scanner = Scanner::new("");
 
         scanner.current = 1;
 
@@ -228,7 +254,7 @@ mod tests {
 
     #[test]
     fn should_add_a_token() {
-        let mut scanner = super::Scanner::new("=");
+        let mut scanner = Scanner::new("=");
 
         // This would be handled automatically in the scan_tokens method, but for testing purposes we need to set the start and current manually.
         scanner.current += 1;
@@ -248,7 +274,7 @@ mod tests {
 
     #[test]
     fn should_add_two_char_token() {
-        let mut scanner = super::Scanner::new("<=");
+        let mut scanner = Scanner::new("<=");
 
         let token = scanner.scan_tokens().unwrap();
 
@@ -265,7 +291,7 @@ mod tests {
 
     #[test]
     fn should_add_eof_after_scan() {
-        let mut scanner = super::Scanner::new("");
+        let mut scanner = Scanner::new("");
 
         let tokens = scanner.scan_tokens().unwrap();
 
@@ -282,7 +308,7 @@ mod tests {
 
     #[test]
     fn should_strip_comments() {
-        let mut scanner = super::Scanner::new("// this is a comment");
+        let mut scanner = Scanner::new("// this is a comment");
 
         let tokens = scanner.scan_tokens().unwrap();
 
@@ -300,8 +326,7 @@ mod tests {
 
     #[test]
     fn should_match_tokens_prior_to_comment() {
-        let mut scanner =
-            super::Scanner::new("<= // Wow! A less-than-or-equal-to binary operator!");
+        let mut scanner = Scanner::new("<= // Wow! A less-than-or-equal-to binary operator!");
 
         let tokens = scanner.scan_tokens().unwrap();
 
@@ -319,7 +344,7 @@ mod tests {
 
     #[test]
     fn should_increment_line() {
-        let mut scanner = super::Scanner::new("(\n()\n+//\n");
+        let mut scanner = Scanner::new("(\n()\n+//\r\n");
 
         scanner.scan_tokens().unwrap();
 
@@ -328,10 +353,39 @@ mod tests {
 
     #[test]
     fn should_ignore_whitespace() {
-        let mut scanner = super::Scanner::new("\t   \t  \t");
+        let mut scanner = Scanner::new("\t   \t  \t");
 
         scanner.scan_tokens().unwrap();
 
         assert_eq!(scanner.tokens.len(), 1); // Includes EOF
+    }
+
+    #[test]
+    fn should_scan_string() {
+        let mut scanner = Scanner::new("\"Hello, world!\"");
+
+        let tokens = scanner.scan_tokens().unwrap();
+
+        assert_eq!(
+            tokens[0],
+            Token {
+                token: Str,
+                line: 1,
+                literal: Some(LiteralType::Str("Hello, world!".into())),
+                lexeme: "\"Hello, world!\"".into()
+            }
+        );
+    }
+
+    #[test]
+    fn should_error_on_unterminated_string() {
+        let mut scanner = Scanner::new("\"Hello, world!");
+
+        let tokens = scanner.scan_tokens();
+
+        assert!(matches!(
+            tokens,
+            Err(ScannerError::UnterminatedString { line: 1 })
+        ));
     }
 }
