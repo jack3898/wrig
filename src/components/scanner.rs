@@ -1,5 +1,3 @@
-use std::string::String;
-
 use thiserror::Error;
 
 use super::token_components::{LiteralType, Token, TokenType, TokenType::*};
@@ -132,6 +130,7 @@ impl Scanner {
             '/' => self.add_token(Slash, None),
             '"' => self.add_string_token()?,
             c if c.is_digit(10) => self.add_number_token()?,
+            c if c.is_ascii_alphabetic() || c == '_' => self.add_identifier_token()?,
             ' ' | '\r' | '\t' => (),
             '\n' => self.line += 1,
             c => Err(ScannerError::UnexpectedToken {
@@ -139,6 +138,38 @@ impl Scanner {
                 line: self.line,
             })?,
         };
+
+        Ok(())
+    }
+
+    fn add_identifier_token(&mut self) -> Result<(), ScannerError> {
+        while self.current_char_test(|c| c.is_ascii_alphanumeric()) {
+            self.advance();
+        }
+
+        let text = self.get_source_slice(self.start, self.current);
+
+        let token_type = match text.as_str() {
+            "and" => And,
+            "class" => Class,
+            "else" => Else,
+            "true" => True,
+            "false" => False,
+            "for" => For,
+            "fun" => Fun,
+            "if" => If,
+            "nil" => Nil,
+            "or" => Or,
+            "print" => Print,
+            "return" => Return,
+            "super" => Super,
+            "this" => This,
+            "var" => Var,
+            "while" => While,
+            _ => Identifier,
+        };
+
+        self.add_token(token_type, None);
 
         Ok(())
     }
@@ -275,7 +306,7 @@ mod tests {
 
     #[test]
     fn should_return_error_on_unknown_token() {
-        let mut scanner = Scanner::new("Hello, world!");
+        let mut scanner = Scanner::new("#");
 
         let result = scanner
             .scan_token()
@@ -472,16 +503,36 @@ mod tests {
     }
 
     #[test]
-    fn should_error_when_converting_invalid_string_to_number() {
-        let mut scanner = Scanner::new("3.a");
+    fn should_add_identifier() {
+        let mut scanner = Scanner::new("while");
 
-        let tokens = scanner
-            .scan_tokens()
-            .expect_err("Unexpected successful scan");
+        let tokens = scanner.scan_tokens().unwrap();
 
-        assert!(matches!(
-            tokens,
-            ScannerError::UnexpectedToken { lexeme: _, line: _ } // Not a parse error, as the code should check for digits prior to parsing!
-        ));
+        assert_eq!(
+            tokens[0],
+            Token {
+                token: While,
+                line: 1,
+                literal: None,
+                lexeme: "while".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn should_add_identifier_with_underscore() {
+        let mut scanner = Scanner::new("_random");
+
+        let tokens = scanner.scan_tokens().unwrap();
+
+        assert_eq!(
+            tokens[0],
+            Token {
+                token: Identifier,
+                line: 1,
+                literal: None,
+                lexeme: "_random".into(),
+            }
+        );
     }
 }
