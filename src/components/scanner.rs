@@ -14,13 +14,13 @@ pub struct Scanner {
 
 #[derive(Error, Debug)]
 pub enum ScannerError {
-    #[error("Unexpected EOF encountered.")]
+    #[error("Unexpected EOF encountered")]
     UnexpectedEof,
-    #[error("Unterminated string. All strings must close. Encountered on line {line}.")]
+    #[error("Unterminated string. All strings must close. Encountered on line {line}")]
     UnterminatedString { line: usize },
-    #[error("Could not convert {expected} into a number on line {line}.")]
-    InvalidNumber { expected: String, line: usize },
-    #[error("Unexpected token {lexeme} on line {line}.")]
+    #[error("Could not convert {received} into a number on line {line}")]
+    InvalidNumber { received: String, line: usize },
+    #[error("Unexpected token {lexeme} on line {line}")]
     UnexpectedToken { lexeme: String, line: usize },
 }
 
@@ -56,12 +56,12 @@ impl Scanner {
     fn get_source_slice(&self, start: usize, end: usize) -> String {
         debug_assert!(
             start != end,
-            "Start index is identical to the end index when fetching the source slice."
+            "Start index is identical to the end index when fetching the source slice"
         );
 
         self.source
             .get(start..end)
-            .expect("Critical error in scanning source code. Attempted to extract a slice of source with an out of bounds index.")
+            .expect("Critical error in scanning source code. Attempted to extract a slice of source with an out of bounds index")
             .iter()
             .collect()
     }
@@ -72,6 +72,10 @@ impl Scanner {
         };
 
         self.source.get(self.current).copied()
+    }
+
+    fn peek_next(&self) -> Option<char> {
+        self.source.get(self.current + 1).copied()
     }
 
     fn advance(&mut self) -> Option<char> {
@@ -121,12 +125,13 @@ impl Scanner {
             '=' => self.add_token(Equal, None),
             '/' if self.conditional_advance('/') => {
                 // This is a comment, like this one! We'll just strip it.
-                while !self.is_at_end() && !self.current_char_eq('\n') {
+                while !self.is_at_end() && !self.current_char_test(|c| c == '\n') {
                     self.advance();
                 }
             }
             '/' => self.add_token(Slash, None),
             '"' => self.add_string_token()?,
+            c if c.is_digit(10) => self.add_number_token()?,
             ' ' | '\r' | '\t' => (),
             '\n' => self.line += 1,
             c => Err(ScannerError::UnexpectedToken {
@@ -140,8 +145,8 @@ impl Scanner {
 
     /// Scans the entirety of a string literal into a token and adds it to the scanner's tokens vector.
     fn add_string_token(&mut self) -> Result<(), ScannerError> {
-        while !self.current_char_eq('"') && !self.is_at_end() {
-            if self.current_char_eq('\n') {
+        while !self.current_char_test(|c| c == '"') && !self.is_at_end() {
+            if self.current_char_test(|c| c == '\n') {
                 self.line += 1;
             }
 
@@ -157,6 +162,32 @@ impl Scanner {
         let value = self.get_source_slice(self.start + 1, self.current - 1);
 
         self.add_token(Str, Some(LiteralType::Str(value)));
+
+        Ok(())
+    }
+
+    fn add_number_token(&mut self) -> Result<(), ScannerError> {
+        while self.current_char_test(|c| c.is_digit(10)) {
+            self.advance();
+        }
+
+        if self.current_char_test(|c| c == '.') && self.next_char_test(|c| c.is_digit(10)) {
+            self.advance();
+
+            while self.current_char_test(|c| c.is_digit(10)) {
+                self.advance();
+            }
+        }
+
+        let source_slice = self.get_source_slice(self.start, self.current);
+        let source_slice_f = source_slice
+            .parse()
+            .map_err(|_| ScannerError::InvalidNumber {
+                received: source_slice,
+                line: self.line,
+            })?;
+
+        self.add_token(Number, Some(LiteralType::Number(source_slice_f)));
 
         Ok(())
     }
@@ -178,11 +209,26 @@ impl Scanner {
         self.current >= self.source.len()
     }
 
-    fn current_char_eq(&self, test: char) -> bool {
+    fn current_char_test<F>(&self, test: F) -> bool
+    where
+        F: FnOnce(char) -> bool,
+    {
         let current = self.peek();
 
         match current {
-            Some(char) => char == test,
+            Some(char) => test(char),
+            None => false,
+        }
+    }
+
+    fn next_char_test<F>(&self, test: F) -> bool
+    where
+        F: FnOnce(char) -> bool,
+    {
+        let current = self.peek_next();
+
+        match current {
+            Some(char) => test(char),
             None => false,
         }
     }
@@ -190,9 +236,7 @@ impl Scanner {
 
 #[cfg(test)]
 mod tests {
-    use crate::components::token_components::LiteralType;
-
-    use super::{Scanner, ScannerError, Token, TokenType::*};
+    use super::{LiteralType, Scanner, ScannerError, Token, TokenType::*};
 
     #[test]
     fn should_init_scanner() {
@@ -233,11 +277,13 @@ mod tests {
     fn should_return_error_on_unknown_token() {
         let mut scanner = Scanner::new("Hello, world!");
 
-        let result = scanner.scan_token();
+        let result = scanner
+            .scan_token()
+            .expect_err("Unexpected successful scan");
 
         assert!(matches!(
             result,
-            Err(ScannerError::UnexpectedToken { lexeme: _, line: _ })
+            ScannerError::UnexpectedToken { lexeme: _, line: _ }
         ));
     }
 
@@ -381,11 +427,61 @@ mod tests {
     fn should_error_on_unterminated_string() {
         let mut scanner = Scanner::new("\"Hello, world!");
 
-        let tokens = scanner.scan_tokens();
+        let tokens = scanner
+            .scan_tokens()
+            .expect_err("Unexpected successful scan");
 
         assert!(matches!(
             tokens,
-            Err(ScannerError::UnterminatedString { line: 1 })
+            ScannerError::UnterminatedString { line: 1 }
+        ));
+    }
+
+    #[test]
+    fn should_convert_a_string_to_number() {
+        let mut scanner = Scanner::new("3.14");
+
+        let tokens = scanner.scan_tokens().unwrap();
+
+        assert_eq!(
+            tokens[0],
+            Token {
+                token: Number,
+                line: 1,
+                literal: Some(LiteralType::Number(3.14)),
+                lexeme: "3.14".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn should_convert_string_to_number_int() {
+        let mut scanner = Scanner::new("3");
+
+        let tokens = scanner.scan_tokens().unwrap();
+
+        assert_eq!(
+            tokens[0],
+            Token {
+                token: Number,
+                line: 1,
+                literal: Some(LiteralType::Number(3.0)),
+                lexeme: "3".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn should_error_when_converting_invalid_string_to_number() {
+        let mut scanner = Scanner::new("3.a");
+
+        let tokens = scanner
+            .scan_tokens()
+            .expect_err("Unexpected successful scan");
+
+        assert!(matches!(
+            tokens,
+            ScannerError::UnexpectedToken { lexeme: _, line: _ } // Not a parse error, as the code should check for digits prior to parsing!
         ));
     }
 }
