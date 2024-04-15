@@ -8,6 +8,7 @@ pub struct Scanner {
     start: usize,
     current: usize,
     line: usize,
+    errors: Vec<ScannerError>,
 }
 
 #[derive(Error, Debug)]
@@ -16,9 +17,9 @@ pub enum ScannerError {
     UnexpectedEof,
     #[error("Unterminated string. All strings must close. Encountered on line {line}")]
     UnterminatedString { line: usize },
-    #[error("Could not convert {received} into a number on line {line}")]
+    #[error("Could not convert '{received}' into a number on line {line}")]
     InvalidNumber { received: String, line: usize },
-    #[error("Unexpected token {lexeme} on line {line}")]
+    #[error("Unexpected token '{lexeme}' on line {line}")]
     UnexpectedToken { lexeme: String, line: usize },
 }
 
@@ -30,14 +31,19 @@ impl Scanner {
             start: 0,
             current: 0,
             line: 1,
+            errors: vec![],
         }
     }
 
-    pub fn scan_tokens(&mut self) -> Result<&Vec<Token>, ScannerError> {
+    pub fn scan_tokens(&mut self) -> (&Vec<Token>, &Vec<ScannerError>) {
         while !self.is_at_end() {
             self.start = self.current;
 
-            self.scan_token()?;
+            let token_scan_result = self.scan_token();
+
+            if let Err(scan_error) = token_scan_result {
+                self.errors.push(scan_error);
+            };
         }
 
         self.tokens.push(Token {
@@ -47,7 +53,7 @@ impl Scanner {
             literal: None,
         });
 
-        Ok(&self.tokens)
+        (&self.tokens, &self.errors)
     }
 
     /// The source in the scanner is a collection of chars. This will grab a slice, and create a new string.
@@ -353,10 +359,10 @@ mod tests {
     fn should_add_two_char_token() {
         let mut scanner = Scanner::new("<=");
 
-        let token = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
-            token[0],
+            tokens[0],
             Token {
                 token: LessEqual,
                 line: 1,
@@ -370,7 +376,7 @@ mod tests {
     fn should_add_eof_after_scan() {
         let mut scanner = Scanner::new("");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -387,7 +393,7 @@ mod tests {
     fn should_strip_comments() {
         let mut scanner = Scanner::new("// this is a comment");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -405,7 +411,7 @@ mod tests {
     fn should_match_tokens_prior_to_comment() {
         let mut scanner = Scanner::new("<= // Wow! A less-than-or-equal-to binary operator!");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -423,7 +429,7 @@ mod tests {
     fn should_increment_line() {
         let mut scanner = Scanner::new("(\n()\n+//\r\n");
 
-        scanner.scan_tokens().unwrap();
+        scanner.scan_tokens();
 
         assert_eq!(scanner.line, 4);
     }
@@ -432,7 +438,7 @@ mod tests {
     fn should_ignore_whitespace() {
         let mut scanner = Scanner::new("\t   \t  \t");
 
-        scanner.scan_tokens().unwrap();
+        scanner.scan_tokens();
 
         assert_eq!(scanner.tokens.len(), 1); // Includes EOF
     }
@@ -441,7 +447,7 @@ mod tests {
     fn should_scan_string() {
         let mut scanner = Scanner::new("\"Hello, world!\"");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -458,12 +464,10 @@ mod tests {
     fn should_error_on_unterminated_string() {
         let mut scanner = Scanner::new("\"Hello, world!");
 
-        let tokens = scanner
-            .scan_tokens()
-            .expect_err("Unexpected successful scan");
+        let (_, errors) = scanner.scan_tokens();
 
         assert!(matches!(
-            tokens,
+            errors[0],
             ScannerError::UnterminatedString { line: 1 }
         ));
     }
@@ -472,7 +476,7 @@ mod tests {
     fn should_convert_a_string_to_number() {
         let mut scanner = Scanner::new("3.14");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -489,7 +493,7 @@ mod tests {
     fn should_convert_string_to_number_int() {
         let mut scanner = Scanner::new("3");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -506,7 +510,7 @@ mod tests {
     fn should_add_identifier() {
         let mut scanner = Scanner::new("while");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -523,7 +527,7 @@ mod tests {
     fn should_add_identifier_with_underscore() {
         let mut scanner = Scanner::new("_random");
 
-        let tokens = scanner.scan_tokens().unwrap();
+        let (tokens, _) = scanner.scan_tokens();
 
         assert_eq!(
             tokens[0],
@@ -534,5 +538,14 @@ mod tests {
                 lexeme: "_random".into(),
             }
         );
+    }
+
+    #[test]
+    fn should_gracefully_continue_scanning_even_of_error() {
+        let mut scanner = Scanner::new("() {} # $ \"hi");
+
+        let (_, errors) = scanner.scan_tokens();
+
+        assert!(errors.len() == 3);
     }
 }

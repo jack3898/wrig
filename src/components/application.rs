@@ -2,22 +2,26 @@ use std::process;
 
 use crate::components::Scanner;
 
-pub struct Application {
-    had_error: bool,
+pub struct Program {
+    pub had_error: bool,
 }
 
-impl Application {
-    fn report(&mut self, line: i32, where_msg: &str, message: &str) {
-        println!("[line {line}] Error{where_msg}: {message}");
+impl Program {
+    fn report(&mut self, message: String) {
+        println!("{message}");
 
         self.had_error = true;
     }
 
-    pub fn run(&self, source: &str) {
+    pub fn run(&mut self, source: &str) {
         // First we scan the source for its distinct tokens
         let mut scanner = Scanner::new(source);
 
-        let tokens = scanner.scan_tokens();
+        let (tokens, errors) = scanner.scan_tokens();
+
+        for error in errors {
+            self.report(error.to_string());
+        }
 
         println!("{:?}", tokens);
 
@@ -33,7 +37,7 @@ impl Application {
     }
 }
 
-impl Default for Application {
+impl Default for Program {
     fn default() -> Self {
         Self { had_error: false }
     }
