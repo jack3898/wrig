@@ -1,5 +1,6 @@
 use crate::components::token_components::{LiteralType, Token};
 
+#[derive(Debug)]
 pub enum Expr {
     Binary(Box<Expr>, Token, Box<Expr>),
     Grouping(Box<Expr>),

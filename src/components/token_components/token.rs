@@ -3,7 +3,7 @@ use std::fmt::Display;
 use super::LiteralType;
 use super::TokenType;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
     pub token: TokenType,
     pub line: usize,
